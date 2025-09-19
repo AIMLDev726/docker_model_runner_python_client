@@ -1,9 +1,13 @@
 LICENSE
 README.md
 pyproject.toml
+./__init__.py
+./async_client.py
+./client.py
 Examples/async_client.py
 Examples/async_stream_method.py
 Examples/embedding_example.py
+Examples/mcp11.py
 Examples/simple_client.py
 Examples/simple_client_stream.py
 Examples/sync_stream_method.py

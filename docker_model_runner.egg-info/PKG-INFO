@@ -23,6 +23,8 @@ Requires-Dist: requests>=2.25.0
 Requires-Dist: aiohttp>=3.8.0
 Requires-Dist: pydantic>=1.8.0
 Requires-Dist: typing-extensions>=4.0.0
+Requires-Dist: fastmcp>=0.1.0
+Requires-Dist: mcp>=1.13.1
 Dynamic: license-file
 
 

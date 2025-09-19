@@ -1,11 +1,18 @@
+try:
+    from fastmcp import Client
+    MCP_AVAILABLE = True
+except ImportError:
+    Client = None
+    MCP_AVAILABLE = False
+
 import json
 import requests
-from typing import Optional, Dict, Any, Iterator, List, Literal
+from typing import Optional, Dict, Any, Iterator, List, Literal, Union
 from typing_extensions import TypedDict
 
-class Message(TypedDict):
+class Message(TypedDict, total=False):
     role: str  # e.g., "user", "assistant", "system"
-    content: str
+    content: Union[str, List[Dict[str, Any]]]  # Support both string and OpenAI vision format
     # Optional fields like tool_calls can be added if needed
 
 class Stream:
@@ -88,18 +95,73 @@ class ChatCompletions:
         url = f"{self.client.base_url}/chat/completions"
         data = {"model": model, "messages": messages, **kwargs}
         
+        # Convert OpenAI vision format to Docker Model Runner format
+        for message in data["messages"]:
+            if isinstance(message.get("content"), list):
+                # Convert OpenAI vision format to simple text with embedded URLs
+                text_parts = []
+                image_urls = []
+                
+                for content_part in message["content"]:
+                    if content_part.get("type") == "text":
+                        text_parts.append(content_part.get("text", ""))
+                    elif content_part.get("type") == "image_url":
+                        image_url = content_part.get("image_url", {}).get("url", "")
+                        if image_url:
+                            image_urls.append(image_url)
+                
+                # Combine text and image URLs
+                combined_content = " ".join(text_parts)
+                if image_urls:
+                    combined_content += " " + " ".join(image_urls)
+                
+                message["content"] = combined_content.strip()
+        
+        # Handle MCP tools: convert to function tools for server
+        mcp_tools = {}
+        if "tools" in data and MCP_AVAILABLE:
+            function_tools = []
+            for tool in data["tools"]:
+                if tool.get("type") == "mcp":
+                    import asyncio
+                    config = {"mcpServers": {tool["server_label"]: {"command": tool["command"], "args": tool["args"]}}}
+                    async def get_tools():
+                        async with Client(config) as mcp_client:
+                            return await mcp_client.list_tools()
+                    available_tools = asyncio.run(get_tools())
+                    for t in available_tools:
+                        function_tools.append({
+                            "type": "function",
+                            "function": {
+                                "name": t.name,
+                                "description": t.description,
+                                "parameters": t.inputSchema
+                            }
+                        })
+                        mcp_tools[t.name] = tool
+                elif tool.get("type") == "function":
+                    function_tools.append(tool)
+            data["tools"] = function_tools
+        
         # Handle tool_choice locally
         if tool_choice == "none":
             data.pop("tools", None)
         elif tool_choice == "always":
             if "tools" in data:
-                tool_names = [tool["function"]["name"] for tool in data["tools"]]
-                tool_names_str = ", ".join(tool_names)
-                # Modify the last user message
-                for msg in reversed(data["messages"]):
-                    if msg["role"] == "user":
-                        msg["content"] += f" Use tool {tool_names_str} to respond strictly use tool."
-                        break
+                tool_names = []
+                for tool in data["tools"]:
+                    if tool.get("type") == "function":
+                        name = tool["function"]["name"]
+                        if name in mcp_tools:
+                            name = mcp_tools[name]["server_label"]  # Use original label
+                        tool_names.append(name)
+                if tool_names:  # Only modify if there are tools
+                    tool_names_str = ", ".join(tool_names)
+                    # Modify the last user message
+                    for msg in reversed(data["messages"]):
+                        if msg["role"] == "user":
+                            msg["content"] += f" Use tool {tool_names_str} to respond strictly use tool."
+                            break
         elif tool_choice == "auto":
             # Send tools and let model decide (default behavior)
             pass
@@ -110,7 +172,50 @@ class ChatCompletions:
             return Stream(self._stream_response(url, data))
         response = self.client.session.post(url, json=data)
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+        
+        # Handle MCP tool calls
+        message = result['choices'][0]['message']
+        if message.get("tool_calls") and MCP_AVAILABLE:
+            import asyncio
+            for tool_call in message["tool_calls"]:
+                func_name = tool_call["function"]["name"]
+                if func_name in mcp_tools:
+                    mcp_tool = mcp_tools[func_name]
+                    # Add detailed intermediate logs
+                    args = json.loads(tool_call["function"].get("arguments", "{}"))
+                    intermediate_logs = f"🤖 LLM decided to call MCP tool\n\n"
+                    intermediate_logs += f"🔧 Tool: {func_name}\n\n"
+                    intermediate_logs += f"📝 Arguments: {args}\n\n"
+                    intermediate_logs += f"⚡ Executing MCP tool...\n\n"
+                    # Execute MCP synchronously
+                    mcp_client = Client({"mcpServers": {mcp_tool["server_label"]: {"command": mcp_tool["command"], "args": mcp_tool["args"]}}})
+                    tool_result = mcp_client.call_tool(func_name, args)
+                    # Extract MCP response summary
+                    result_str = str(tool_result)
+                    intermediate_logs += f"✅ MCP Response: {result_str}\n\n"
+                    intermediate_logs += f"🧠 LLM processing tool results...\n\n"
+                    # Send follow-up
+                    follow_up_messages = [
+                        {"role": "system", "content": "You are a helpful assistant. Always respond in natural language, not JSON or structured formats unless specifically requested."}
+                    ] + data["messages"] + [
+                        message,
+                        {"role": "tool", "tool_call_id": tool_call["id"], "content": result_str}
+                    ]
+                    follow_up_data = {"model": model, "messages": follow_up_messages}
+                    if "response_format" in kwargs:
+                        follow_up_data["response_format"] = kwargs["response_format"]
+                    follow_up_response = self.client.session.post(url, json=follow_up_data)
+                    follow_up_response.raise_for_status()
+                    result = follow_up_response.json()
+                    intermediate_logs += f"📋 Generating final response...\n\n"
+                    # Prepend logs to final response
+                    final_content = result['choices'][0]['message']['content']
+                    result['choices'][0]['message']['content'] = intermediate_logs + final_content
+                    result["conversation"] = follow_up_messages  # Include full conversation
+                    break  # Handle one MCP call for now
+        
+        return result
 
     def stream(self, model: str, messages: List[Message], **kwargs) -> Iterator[Dict[str, Any]]:
         """Stream method that yields chunks and then the full response"""

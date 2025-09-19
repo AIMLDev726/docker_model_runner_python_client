@@ -13,6 +13,8 @@ dependencies = [
     "aiohttp>=3.8.0",
     "pydantic>=1.8.0",
     "typing-extensions>=4.0.0",
+    "fastmcp>=0.1.0",
+    "mcp>=1.13.1"
 ]
 requires-python = ">=3.7"
 readme = "README.md"
@@ -28,6 +30,12 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
+
+[tool.setuptools]
+packages = ["docker_model_runner"]
+
+[tool.setuptools.package-dir]
+"docker_model_runner" = "."
 
 [project.urls]
 Homepage = "https://github.com/AIMLDev726/docker_model_runner_python_client"
