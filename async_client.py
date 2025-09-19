@@ -1,3 +1,32 @@
+"""
+Docker Model Runner Async Client
+
+This module provides an asynchronous client for interacting with Docker-based AI models
+through the Docker Model Runner API. It supports OpenAI-compatible chat completions,
+embeddings, and model management, with additional MCP (Model Context Protocol) tool support.
+
+The client automatically handles UTF-8 encoding, connection management, and provides
+warnings when MCP tools are used in environments that may cause issues (like Jupyter notebooks).
+
+Classes:
+    AsyncClient: Main asynchronous client for Docker Model Runner API
+    AsyncChat: Chat completions interface
+    AsyncChatCompletions: Chat completions implementation
+    AsyncCompletions: Text completions interface
+    AsyncEmbeddings: Text embeddings interface
+    AsyncModels: Model management interface
+    MCPEnvironmentWarning: Warning for MCP environment issues
+    MCPEnvironmentError: Error for critical MCP failures
+
+Example:
+    >>> async with AsyncClient(api_key="your_key") as client:
+    ...     response = await client.chat.completions.create(
+    ...         model="ai/model_name",
+    ...         messages=[{"role": "user", "content": "Hello!"}]
+    ...     )
+    ...     print(response["choices"][0]["message"]["content"])
+"""
+
 try:
     from fastmcp import Client
     MCP_AVAILABLE = True
@@ -9,17 +38,156 @@ import json
 import aiohttp
 from typing import Optional, Dict, Any, AsyncIterator, List, Literal, Union
 from typing_extensions import TypedDict
+import warnings
+import sys
+from io import UnsupportedOperation
+
+class MCPEnvironmentWarning(UserWarning):
+    """Warning raised when MCP tools are used in environments that may cause issues.
+    
+    This warning is issued when MCP (Model Context Protocol) tools are detected
+    in Jupyter notebook environments, where subprocess operations may fail due to
+    limitations in how notebooks handle file descriptors.
+    
+    See Also:
+        MCPEnvironmentError: For critical MCP environment failures
+        _check_mcp_environment(): Function that triggers this warning
+    """
+    pass
+
+class MCPEnvironmentError(RuntimeError):
+    """Error raised when MCP tools cannot function properly in the current environment.
+    
+    This error indicates that MCP operations have failed due to environment
+    limitations and cannot be recovered from automatically.
+    
+    See Also:
+        MCPEnvironmentWarning: For non-critical MCP environment issues
+    """
+    pass
+
+def _is_running_in_jupyter():
+    """Detect if code is running in a Jupyter notebook environment.
+    
+    This function uses multiple detection methods to determine if the current
+    execution environment is a Jupyter notebook, which can affect MCP tool functionality.
+    
+    Returns:
+        bool: True if running in Jupyter notebook, False otherwise
+        
+    Note:
+        Detection methods include checking for IPython kernel, ipykernel module,
+        and stdout.fileno() behavior which fails in notebook environments.
+    """
+    try:
+        # Check for IPython kernel
+        if hasattr(__builtins__, '__IPYTHON__'):
+            return True
+        
+        # Check for jupyter kernel specifically
+        if 'ipykernel' in sys.modules:
+            return True
+            
+        # Check for jupyter in current frames (more specific)
+        for frame_info in sys._current_frames().values():
+            frame_str = str(frame_info)
+            if 'jupyter' in frame_str.lower() and 'kernel' in frame_str.lower():
+                return True
+                
+        # Check for notebook-specific stdout behavior
+        if hasattr(sys.stdout, 'fileno'):
+            try:
+                sys.stdout.fileno()
+                # If fileno() works, we're likely not in a notebook
+                return False
+            except (OSError, UnsupportedOperation):
+                # If fileno() fails, we might be in a notebook
+                return True
+                
+        return False
+    except:
+        return False
+
+def _check_mcp_environment():
+    """Check if MCP can run properly in current environment and issue warnings.
+    
+    This function checks if MCP tools can function properly in the current environment
+    and issues appropriate warnings if issues are detected (e.g., Jupyter notebooks).
+    
+    The function only issues warnings when MCP_AVAILABLE is True and the environment
+    is detected as problematic for MCP operations.
+    
+    See Also:
+        _is_running_in_jupyter(): Environment detection function
+        MCPEnvironmentWarning: Warning class used by this function
+    """
+    if not MCP_AVAILABLE:
+        return
+        
+    if _is_running_in_jupyter():
+        warnings.warn(
+            "MCP tools detected in Jupyter notebook environment. "
+            "MCP functionality may not work properly due to subprocess limitations in notebooks. "
+            "For best results, run your code in a regular Python script (.py file) instead of a notebook. "
+            "If you encounter 'fileno' errors, switch to a .py file.",
+            MCPEnvironmentWarning,
+            stacklevel=3
+        )
 
 class Message(TypedDict, total=False):
+    """Represents a chat message in OpenAI-compatible format.
+    
+    This TypedDict supports both simple text messages and complex messages
+    with image content (vision format).
+    
+    Attributes:
+        role (str): The role of the message sender. Common values:
+            - "user": Message from the user
+            - "assistant": Message from the AI assistant  
+            - "system": System/instruction message
+        content (Union[str, List[Dict[str, Any]]]): The message content.
+            Can be a simple string or a list of content parts for vision models.
+            
+    Example:
+        Simple text message:
+        >>> {"role": "user", "content": "Hello, world!"}
+        
+        Vision message with image:
+        >>> {
+        ...     "role": "user", 
+        ...     "content": [
+        ...         {"type": "text", "text": "What's in this image?"},
+        ...         {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
+        ...     ]
+        ... }
+    """
     role: str  # e.g., "user", "assistant", "system"
     content: Union[str, List[Dict[str, Any]]]  # Support both string and OpenAI vision format
     # Optional fields like tool_calls can be added if needed
 
 class AsyncStream:
+    """Asynchronous iterator for streaming responses from the API.
+    
+    This class wraps an AsyncIterator to provide a clean interface for
+    consuming streaming responses from chat completions.
+    
+    Attributes:
+        aiterator (AsyncIterator[Dict[str, Any]]): The underlying async iterator
+        
+    Example:
+        >>> async for chunk in stream:
+        ...     print(chunk)
+    """
     def __init__(self, aiterator: AsyncIterator[Dict[str, Any]]):
+        """Initialize the AsyncStream.
+        
+        Args:
+            aiterator: The async iterator to wrap
+        """
         self.aiterator = aiterator
 
     def __aiter__(self):
+        """Return the async iterator."""
         return self.aiterator
 
 class AsyncClient:
@@ -32,7 +200,16 @@ class AsyncClient:
         self._configure_utf8()
 
     def _configure_utf8(self):
-        """Automatically configure UTF-8 encoding for proper character support"""
+        """Automatically configure UTF-8 encoding for proper character support.
+        
+        This method configures stdout, stderr, and locale settings to ensure
+        proper UTF-8 encoding support, especially important on Windows systems.
+        
+        The method attempts to:
+        - Reconfigure stdout and stderr for UTF-8 encoding
+        - Set appropriate locale settings for Windows
+        - Gracefully handle any configuration failures
+        """
         import sys
         import locale
         
@@ -62,6 +239,13 @@ class AsyncClient:
                     pass
 
     async def __aenter__(self):
+        """Async context manager entry.
+        
+        Creates and configures the aiohttp ClientSession with appropriate headers.
+        
+        Returns:
+            AsyncClient: The client instance for use in the context
+        """
         headers = {}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -69,11 +253,25 @@ class AsyncClient:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit.
+        
+        Properly closes the aiohttp ClientSession.
+        
+        Args:
+            exc_type: Exception type (if any)
+            exc_val: Exception value (if any) 
+            exc_tb: Exception traceback (if any)
+        """
         if self.session:
             await self.session.close()
             self.session = None
 
     def __del__(self):
+        """Destructor to ensure session cleanup.
+        
+        Attempts to close the session if it exists and is still open.
+        Uses asyncio loop detection to handle cleanup properly.
+        """
         if self.session and not self.session.closed:
             try:
                 import asyncio
@@ -83,24 +281,49 @@ class AsyncClient:
                 pass
 
     async def close(self):
+        """Manually close the client session.
+        
+        This method should be called when the client is no longer needed
+        if not using the async context manager.
+        """
         if self.session:
             await self.session.close()
             self.session = None
 
     @property
     def chat(self):
+        """Access chat completions interface.
+        
+        Returns:
+            AsyncChat: Chat completions interface
+        """
         return AsyncChat(self)
 
     @property
     def completions(self):
+        """Access text completions interface.
+        
+        Returns:
+            AsyncCompletions: Text completions interface
+        """
         return AsyncCompletions(self)
 
     @property
     def embeddings(self):
+        """Access text embeddings interface.
+        
+        Returns:
+            AsyncEmbeddings: Text embeddings interface
+        """
         return AsyncEmbeddings(self)
 
     @property
     def models(self):
+        """Access model management interface.
+        
+        Returns:
+            AsyncModels: Model management interface
+        """
         return AsyncModels(self)
 
 class AsyncChat:
@@ -149,23 +372,28 @@ class AsyncChatCompletions:
         
         # Handle MCP tools: convert to function tools for server
         mcp_tools = {}
+        mcp_server_tools = {}  # Map server_label to list of actual tool names
         if "tools" in data and MCP_AVAILABLE:
+            _check_mcp_environment()  # Check environment before processing MCP tools
             function_tools = []
             for tool in data["tools"]:
                 if tool.get("type") == "mcp":
                     config = {"mcpServers": {tool["server_label"]: {"command": tool["command"], "args": tool["args"]}}}
                     async with Client(config) as mcp_client:
                         available_tools = await mcp_client.list_tools()
+                        server_tools = []
                         for t in available_tools:
                             function_tools.append({
                                 "type": "function",
                                 "function": {
-                                    "name": t.name,
+                                    "name": t.name,  # Use actual tool name
                                     "description": t.description,
                                     "parameters": t.inputSchema
                                 }
                             })
                             mcp_tools[t.name] = tool
+                            server_tools.append(t.name)
+                        mcp_server_tools[tool["server_label"]] = server_tools
                 elif tool.get("type") == "function":
                     function_tools.append(tool)
             data["tools"] = function_tools
@@ -180,14 +408,16 @@ class AsyncChatCompletions:
                     if tool.get("type") == "function":
                         name = tool["function"]["name"]
                         if name in mcp_tools:
-                            name = mcp_tools[name]["server_label"]  # Use original label
-                        tool_names.append(name)
+                            # Use actual tool name, not server label
+                            tool_names.append(name)
+                        else:
+                            tool_names.append(name)
                 if tool_names:  # Only modify if there are tools
                     tool_names_str = ", ".join(tool_names)
                     # Modify the last user message
                     for msg in reversed(data["messages"]):
                         if msg["role"] == "user":
-                            msg["content"] += f" Use tool {tool_names_str} to respond strictly use tool."
+                            msg["content"] += f" Use one of these tools: {tool_names_str}. Choose the most appropriate tool and provide only the tool call, no additional text."
                             break
         elif tool_choice == "auto":
             # Send tools and let model decide (default behavior)
@@ -204,27 +434,75 @@ class AsyncChatCompletions:
             # Handle MCP tool calls
             message = result['choices'][0]['message']
             if message.get("tool_calls") and MCP_AVAILABLE:
+                # Remove duplicate tool calls (same ID)
+                seen_ids = set()
+                unique_tool_calls = []
+                for tool_call in message["tool_calls"]:
+                    if tool_call["id"] not in seen_ids:
+                        seen_ids.add(tool_call["id"])
+                        unique_tool_calls.append(tool_call)
+                message["tool_calls"] = unique_tool_calls
+                
                 for tool_call in message["tool_calls"]:
                     func_name = tool_call["function"]["name"]
-                    if func_name in mcp_tools:
-                        mcp_tool = mcp_tools[func_name]
+                    
+                    # Check if LLM called server label instead of actual tool name
+                    actual_tool_name = None
+                    if func_name in mcp_server_tools:
+                        # LLM called server label, map to first available tool
+                        server_tools = mcp_server_tools[func_name]
+                        if server_tools:
+                            actual_tool_name = server_tools[0]  # Use first tool from server
+                            print(f"🔄 Mapping server label '{func_name}' to actual tool '{actual_tool_name}'")
+                    elif func_name in mcp_tools:
+                        # LLM called correct tool name
+                        actual_tool_name = func_name
+                    
+                    if actual_tool_name:
+                        mcp_tool = mcp_tools[actual_tool_name]
                         # Add detailed intermediate logs
                         args = json.loads(tool_call["function"].get("arguments", "{}"))
                         intermediate_logs = f"🤖 LLM decided to call MCP tool\n\n"
-                        intermediate_logs += f"🔧 Tool: {func_name}\n\n"
+                        intermediate_logs += f"🔧 Tool: {actual_tool_name}\n\n"
                         intermediate_logs += f"📝 Arguments: {args}\n\n"
                         intermediate_logs += f"⚡ Executing MCP tool...\n\n"
                         # Execute MCP
                         mcp_client = Client({"mcpServers": {mcp_tool["server_label"]: {"command": mcp_tool["command"], "args": mcp_tool["args"]}}})
                         async with mcp_client:
-                            tool_result = await mcp_client.call_tool(func_name, args)
+                            tool_result = await mcp_client.call_tool(actual_tool_name, args)
                         # Extract MCP response summary
                         result_str = str(tool_result)
                         intermediate_logs += f"✅ MCP Response: {result_str}\n\n"
                         intermediate_logs += f"🧠 LLM processing tool results...\n\n"
-                        # Send follow-up
+                        # Send follow-up with generic prompt for consistent JSON from ANY MCP tool
                         follow_up_messages = [
-                            {"role": "system", "content": "You are a helpful assistant. Always respond in natural language, not JSON or structured formats unless specifically requested."}
+                            {
+                                "role": "system",
+                                "content": """You are a helpful assistant that processes MCP tool results and returns responses in valid JSON format.
+
+CRITICAL INSTRUCTIONS FOR ALL MCP TOOLS:
+1. You MUST respond with valid JSON only - no additional text, explanations, or formatting
+2. Your response MUST be parseable by json.loads()
+3. Use this exact JSON structure for ANY MCP tool:
+{
+  "result": "brief summary of what the tool accomplished",
+  "status": "success|error|partial|completed",
+  "data": {
+    "tool_name": "name of the MCP tool that was called",
+    "tool_output": "the complete raw output from the tool",
+    "key_info": "most important information extracted from the output",
+    "metadata": "any additional context or metadata from the tool"
+  },
+  "message": "human-readable summary for the user"
+}
+
+TOOL RESPONSE EXAMPLES:
+- For search tools: {"result": "Found 5 results", "status": "success", "data": {"tool_name": "web_search", "tool_output": "...", "key_info": "Top result: AI news article", "metadata": "search completed in 2.3s"}, "message": "Search completed successfully"}
+- For file operations: {"result": "File created successfully", "status": "success", "data": {"tool_name": "file_manager", "tool_output": "...", "key_info": "Created file.txt with 100 bytes", "metadata": "file path: /tmp/file.txt"}, "message": "File operation completed"}
+- For code execution: {"result": "Code executed successfully", "status": "success", "data": {"tool_name": "code_executor", "tool_output": "35", "key_info": "Output: 35", "metadata": "session_id: 12345"}, "message": "Code execution completed successfully"}
+
+Remember: Return ONLY the JSON object, nothing else. This format works for ALL MCP tools."""
+                            }
                         ] + data["messages"] + [
                             message,
                             {"role": "tool", "tool_call_id": tool_call["id"], "content": result_str}
@@ -235,12 +513,15 @@ class AsyncChatCompletions:
                         async with self.client.session.post(url, json=follow_up_data) as follow_up_response:
                             follow_up_response.raise_for_status()
                             result = await follow_up_response.json()
-                            intermediate_logs += f"📋 Generating final response...\n\n"
-                            # Prepend logs to final response
+
+                            # Keep MCP logs separate from LLM response to avoid JSON corruption
                             final_content = result['choices'][0]['message']['content']
-                            result['choices'][0]['message']['content'] = intermediate_logs + final_content
-                            result["conversation"] = follow_up_messages  # Include full conversation
-                            break  # Handle one MCP call for now
+
+                            # Store logs separately and return clean JSON response
+                            result['mcp_logs'] = intermediate_logs + "📋 Generating final response...\n\n"
+                            result['choices'][0]['message']['content'] = final_content  # Keep only the clean JSON
+                            result["conversation"] = follow_up_messages
+                            break  # Only process first valid tool call
             
             return result
 
@@ -305,10 +586,40 @@ class AsyncChatCompletions:
                                 continue
 
 class AsyncCompletions:
+    """Text completions interface for async client.
+    
+    This class provides access to text completion functionality
+    for generating completions from prompts.
+    
+    Attributes:
+        client (AsyncClient): The parent async client instance
+    """
     def __init__(self, client: AsyncClient):
+        """Initialize the AsyncCompletions interface.
+        
+        Args:
+            client: The parent AsyncClient instance
+        """
         self.client = client
 
     async def create(self, model: str, prompt: str, **kwargs) -> Dict[str, Any]:
+        """Create a text completion.
+        
+        Args:
+            model: The model identifier to use for completion
+            prompt: The text prompt to complete
+            **kwargs: Additional parameters for the API request
+            
+        Returns:
+            Dict containing the API response with completion results
+            
+        Example:
+            >>> response = await client.completions.create(
+            ...     model="ai/model_name",
+            ...     prompt="The quick brown fox"
+            ... )
+            >>> print(response["choices"][0]["text"])
+        """
         if self.client.session is None:
             headers = {}
             if self.client.api_key:
@@ -322,10 +633,40 @@ class AsyncCompletions:
             return await response.json()
 
 class AsyncEmbeddings:
+    """Text embeddings interface for async client.
+    
+    This class provides access to text embedding functionality
+    for generating vector representations of text.
+    
+    Attributes:
+        client (AsyncClient): The parent async client instance
+    """
     def __init__(self, client: AsyncClient):
+        """Initialize the AsyncEmbeddings interface.
+        
+        Args:
+            client: The parent AsyncClient instance
+        """
         self.client = client
 
     async def create(self, model: str, input: List[str], **kwargs) -> Dict[str, Any]:
+        """Create embeddings for the given texts.
+        
+        Args:
+            model: The embedding model identifier to use
+            input: List of text strings to embed
+            **kwargs: Additional parameters for the API request
+            
+        Returns:
+            Dict containing the API response with embedding vectors
+            
+        Example:
+            >>> response = await client.embeddings.create(
+            ...     model="ai/embedding-model",
+            ...     input=["Hello world", "How are you?"]
+            ... )
+            >>> embeddings = response["data"]
+        """
         if self.client.session is None:
             headers = {}
             if self.client.api_key:
@@ -339,10 +680,33 @@ class AsyncEmbeddings:
             return await response.json()
 
 class AsyncModels:
+    """Model management interface for async client.
+    
+    This class provides methods for listing, retrieving, creating, and deleting
+    models in the Docker Model Runner system.
+    
+    Attributes:
+        client (AsyncClient): The parent async client instance
+    """
     def __init__(self, client: AsyncClient):
+        """Initialize the AsyncModels interface.
+        
+        Args:
+            client: The parent AsyncClient instance
+        """
         self.client = client
 
     async def list(self) -> Dict[str, Any]:
+        """List all available models.
+        
+        Returns:
+            Dict containing the list of available models
+            
+        Example:
+            >>> models = await client.models.list()
+            >>> for model in models["data"]:
+            ...     print(model["id"])
+        """
         if self.client.session is None:
             headers = {}
             if self.client.api_key:
@@ -355,6 +719,18 @@ class AsyncModels:
             return await response.json()
 
     async def retrieve(self, model: str) -> Dict[str, Any]:
+        """Retrieve information about a specific model.
+        
+        Args:
+            model: The model identifier to retrieve information for
+            
+        Returns:
+            Dict containing model information
+            
+        Example:
+            >>> model_info = await client.models.retrieve("ai/model_name")
+            >>> print(model_info["description"])
+        """
         if self.client.session is None:
             headers = {}
             if self.client.api_key:
@@ -367,6 +743,19 @@ class AsyncModels:
             return await response.json()
 
     async def create(self, model: str, **kwargs) -> Dict[str, Any]:
+        """Create a new model.
+        
+        Args:
+            model: The model identifier to create
+            **kwargs: Additional parameters for model creation
+            
+        Returns:
+            Dict containing the creation response
+            
+        Note:
+            This method uses the Docker Model Runner management API,
+            not the standard OpenAI models endpoint.
+        """
         if self.client.session is None:
             headers = {}
             if self.client.api_key:
@@ -381,6 +770,18 @@ class AsyncModels:
             return await response.json()
 
     async def delete(self, model: str) -> Dict[str, Any]:
+        """Delete a model.
+        
+        Args:
+            model: The model identifier to delete
+            
+        Returns:
+            Dict containing the deletion response
+            
+        Note:
+            This method uses the Docker Model Runner management API,
+            not the standard OpenAI models endpoint.
+        """
         if self.client.session is None:
             headers = {}
             if self.client.api_key:

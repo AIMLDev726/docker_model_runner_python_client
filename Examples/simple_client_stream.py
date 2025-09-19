@@ -5,7 +5,7 @@ client = Client()  # Automatically uses http://localhost:12434/engines/llama.cpp
 
 # Create a streaming response
 stream = client.chat.completions.stream(
-    model="ai/smollm3",
+    model="ai/gemma3",
     messages=[{"role": "user", "content": "Hello!"}],
     stream=True
 )

@@ -5,7 +5,7 @@ async def test_async_stream():
     async with AsyncClient() as client:
         
         async for item in client.chat.completions.stream(
-            model="ai/smollm3",
+            model="ai/gemma3",
             messages=[{"role": "user", "content": "hello how are u"}]
         ):
             if isinstance(item, dict) and 'choices' in item and item['choices']:

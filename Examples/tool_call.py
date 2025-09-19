@@ -22,7 +22,7 @@ tools = [
 
 
 response = client.chat.completions.create(
-    model="ai/smollm3",
+    model="ai/gemma3",
     messages=[
         {"role": "user", "content": "What is the weather in Paris?"}
     ],

@@ -4,7 +4,7 @@ def test_sync_stream():
     client = Client()
     
     for item in client.chat.completions.stream(
-        model="ai/smollm3",
+        model="ai/gemma3",
         messages=[{"role": "user", "content": "hello how are u"}]
     ):
         if isinstance(item, dict) and 'choices' in item and item['choices']:

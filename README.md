@@ -1,7 +1,8 @@
-
 # Docker Model Runner Client
 
 A Python client for interacting with Docker Model Runner, providing a standard API interface for chat completions, embeddings, and more.
+
+(**Note** :- In Code We Have Used gemma3 model please use tool callling supported model else it might possible you face issue or errors for more information please check dockerhub AI Models.)
 
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/AIMLDev726/docker_model_runner_python_client)
 
