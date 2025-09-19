@@ -4,7 +4,7 @@ from docker_model_runner import AsyncClient
 async def main():
     async with AsyncClient(api_key="nan") as client:
         response = await client.chat.completions.create(
-            model="ai/gemma3n:2B-Q4_K_M",
+            model="ai/smollm3",
             messages=[{"role": "user", "content": "Search for latest news of AI and provide detailed summary for each."}],
             tools=[{
                 "type": "mcp",

@@ -5,7 +5,7 @@ async def main():
     client = AsyncClient()  # Automatically uses http://localhost:12434/engines/llama.cpp/v1
 
     response = await client.chat.completions.create(
-        model="ai/gemma3n:2B-Q4_K_M",
+        model="ai/smollm3",
         messages=[{"role": "user", "content": "Hello!"}]
     )
 

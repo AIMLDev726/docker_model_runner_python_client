@@ -22,13 +22,12 @@ tools = [
 
 
 response = client.chat.completions.create(
-    model="ai/gemma3n:2B-Q4_K_M",
+    model="ai/smollm3",
     messages=[
         {"role": "user", "content": "What is the weather in Paris?"}
     ],
     tools=tools,
     tool_choice="always",
-    n_ctx_slot = 8192
 )
 
 # Check if model returned a tool call
