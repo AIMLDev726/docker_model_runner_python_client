@@ -27,7 +27,8 @@ response = client.chat.completions.create(
         {"role": "user", "content": "What is the weather in Paris?"}
     ],
     tools=tools,
-    tool_choice="always"
+    tool_choice="always",
+    n_ctx_slot = 8192
 )
 
 # Check if model returned a tool call
