@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docker-model-runner"
+version = "0.1.0"
+description = "Python Client for Docker Model Runner"
+authors = [{name = "Docker Model Runner Team"}]
+license = {text = "MIT"}
+dependencies = [
+    "requests>=2.25.0",
+    "aiohttp>=3.8.0",
+    "pydantic>=1.8.0",
+    "typing-extensions>=4.0.0",
+]
+requires-python = ">=3.7"
+readme = "README.md"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/AIMLDev726/docker_model_runner_python_client"
+Repository = "https://github.com/AIMLDev726/docker_model_runner_python_client"
