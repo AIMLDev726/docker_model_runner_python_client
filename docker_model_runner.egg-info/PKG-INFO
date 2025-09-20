@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: docker-model-runner
-Version: 0.1.1
+Version: 0.1.2
 Summary: Python Client for Docker Model Runner
 Author: Docker Model Runner Team
 License: MIT
@@ -27,10 +27,11 @@ Requires-Dist: fastmcp>=0.1.0
 Requires-Dist: mcp>=1.13.1
 Dynamic: license-file
 
-
 # Docker Model Runner Client
 
 A Python client for interacting with Docker Model Runner, providing a standard API interface for chat completions, embeddings, and more.
+
+(**Note** :- In Code We Have Used gemma3 model please use tool callling supported model else it might possible you face issue or errors for more information please check dockerhub AI Models.)
 
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/AIMLDev726/docker_model_runner_python_client)
 
@@ -49,7 +50,7 @@ pip install docker-model-runner
 ```python
 from docker_model_runner import Client
 
-client = Client(base_url="http://localhost:12434/engines/llama.cpp/v1")  # API key optional
+client = Client(base_url="http://localhost:12434/engines/v1")  # API key optional
 
 # Chat completion
 response = client.chat.completions.create(
@@ -67,7 +68,7 @@ import asyncio
 from docker_model_runner import AsyncClient
 
 async def main():
-    async with AsyncClient(base_url="http://localhost:12434/engines/llama.cpp/v1") as client:  # API key optional
+    async with AsyncClient(base_url="http://localhost:12434/engines/v1") as client:  # API key optional
         response = await client.chat.completions.create(
             model="your-model",
             messages=[{"role": "user", "content": "Hello, world!"}]

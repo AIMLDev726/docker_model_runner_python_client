@@ -192,12 +192,12 @@ class Client:
         ... )
     """
     
-    def __init__(self, base_url: str = "http://localhost:12434/engines/llama.cpp/v1", api_key: Optional[str] = None):
+    def __init__(self, base_url: str = "http://localhost:12434/engines/v1", api_key: Optional[str] = None):
         """Initialize the Client.
         
         Args:
             base_url: Base URL of the Docker Model Runner API server.
-                Defaults to http://localhost:12434/engines/llama.cpp/v1
+                Defaults to http://localhost:12434/engines/v1
             api_key: Optional API key for authentication. If provided,
                 it will be sent as "Authorization: Bearer {api_key}"
         """

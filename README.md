@@ -21,7 +21,7 @@ pip install docker-model-runner
 ```python
 from docker_model_runner import Client
 
-client = Client(base_url="http://localhost:12434/engines/llama.cpp/v1")  # API key optional
+client = Client(base_url="http://localhost:12434/engines/v1")  # API key optional
 
 # Chat completion
 response = client.chat.completions.create(
@@ -39,7 +39,7 @@ import asyncio
 from docker_model_runner import AsyncClient
 
 async def main():
-    async with AsyncClient(base_url="http://localhost:12434/engines/llama.cpp/v1") as client:  # API key optional
+    async with AsyncClient(base_url="http://localhost:12434/engines/v1") as client:  # API key optional
         response = await client.chat.completions.create(
             model="your-model",
             messages=[{"role": "user", "content": "Hello, world!"}]

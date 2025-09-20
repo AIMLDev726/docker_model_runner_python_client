@@ -1,6 +1,6 @@
 from docker_model_runner import Client
 
-client = Client(api_key="nan")  # Automatically uses http://localhost:12434/engines/llama.cpp/v1
+client = Client(api_key="nan")  # Automatically uses http://localhost:12434/engines/v1
 
 
 tools = [

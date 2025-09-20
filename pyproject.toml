@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "docker-model-runner"
-version = "0.1.1"
+version = "0.1.2"
 description = "Python Client for Docker Model Runner"
 authors = [{name = "Docker Model Runner Team"}]
 license = {text = "MIT"}

@@ -191,7 +191,7 @@ class AsyncStream:
         return self.aiterator
 
 class AsyncClient:
-    def __init__(self, base_url: str = "http://localhost:12434/engines/llama.cpp/v1", api_key: Optional[str] = None):
+    def __init__(self, base_url: str = "http://localhost:12434/engines/v1", api_key: Optional[str] = None):
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
         self.session = None
