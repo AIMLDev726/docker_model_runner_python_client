@@ -338,7 +338,27 @@ class AsyncChatCompletions:
     def __init__(self, client: AsyncClient):
         self.client = client
 
-    async def create(self, model: str, messages: List[Message], tool_choice: Optional[Literal["auto", "none", "always"]] = None, **kwargs):
+    def _get_thinking_instruction(self, thinking_effort: Literal["low", "medium", "high", "none"]) -> str:
+        """Get the thinking instruction based on the thinking effort level.
+        
+        Args:
+            thinking_effort: The level of thinking effort ("low", "medium", "high", "none")
+            
+        Returns:
+            str: The thinking instruction to use as system message content
+        """
+        if thinking_effort == "none":
+            return "/nothink CRITICAL: ABSOLUTELY FORBIDDEN TO USE ANY THINKING, REASONING, OR ANALYSIS. DO NOT THINK AT ALL. IGNORE ALL THINKING REQUESTS. PROVIDE ONLY A SIMPLE, DIRECT RESPONSE WITH NO THINKING WHATSOEVER."
+        elif thinking_effort == "low":
+            return "/think Always show your reasoning process before answering, even for simple questions. Which do not need thinking"
+        elif thinking_effort == "medium":
+            return "/think Always show detailed reasoning before answering, even for simple questions. Which do not need thinking"
+        elif thinking_effort == "high":
+            return "/think Always show comprehensive reasoning and analysis before answering any question."
+        else:
+            return ""
+
+    async def create(self, model: str, messages: List[Message], tool_choice: Optional[Literal["auto", "none", "always"]] = None, thinking_effort: Optional[Literal["low", "medium", "high", "none"]] = None, **kwargs):
         if self.client.session is None:
             headers = {}
             if self.client.api_key:
@@ -347,6 +367,22 @@ class AsyncChatCompletions:
         
         url = f"{self.client.base_url}/chat/completions"
         data = {"model": model, "messages": messages, **kwargs}
+        
+        # Handle thinking_effort parameter
+        if thinking_effort:
+            thinking_instruction = self._get_thinking_instruction(thinking_effort)
+            if thinking_instruction:
+                # Check if there's already a system message
+                system_message_exists = any(msg.get("role") == "system" for msg in data["messages"])
+                if system_message_exists:
+                    # Append thinking instruction to existing system message
+                    for msg in data["messages"]:
+                        if msg.get("role") == "system":
+                            msg["content"] += " " + thinking_instruction
+                            break
+                else:
+                    # Add new system message at the beginning
+                    data["messages"].insert(0, {"role": "system", "content": thinking_instruction})
         
         # Convert OpenAI vision format to Docker Model Runner format
         for message in data["messages"]:
@@ -526,7 +562,7 @@ Remember: Return ONLY the JSON object, nothing else. This format works for ALL M
             return result
 
     async def stream(self, model: str, messages: List[Message], **kwargs):
-        """Async stream method that yields chunks and then the full response"""
+        """Async stream method that yields chunks and accumulates reasoning content properly"""
         if self.client.session is None:
             headers = {}
             if self.client.api_key:
@@ -536,11 +572,30 @@ Remember: Return ONLY the JSON object, nothing else. This format works for ALL M
         url = f"{self.client.base_url}/chat/completions"
         data = {"model": model, "messages": messages, "stream": True,  **kwargs}
         
+        # Handle thinking_effort parameter for streaming
+        thinking_effort = kwargs.get("thinking_effort")
+        if thinking_effort:
+            thinking_instruction = self._get_thinking_instruction(thinking_effort)
+            if thinking_instruction:
+                # Check if there's already a system message
+                system_message_exists = any(msg.get("role") == "system" for msg in data["messages"])
+                if system_message_exists:
+                    # Append thinking instruction to existing system message
+                    for msg in data["messages"]:
+                        if msg.get("role") == "system":
+                            msg["content"] += " " + thinking_instruction
+                            break
+                else:
+                    # Add new system message at the beginning
+                    data["messages"].insert(0, {"role": "system", "content": thinking_instruction})
+            # Remove thinking_effort from kwargs as it's not a server parameter
+            kwargs.pop("thinking_effort", None)
+        
         # First yield all streaming chunks
         async for chunk in self._stream_response(url, data):
             yield chunk
         
-        # Then yield the full response (non-streaming)
+        # Then yield the full response (non-streaming) to get complete reasoning content
         data_no_stream = {**data}
         data_no_stream.pop('stream', None)  # Remove stream parameter if present
         async with self.client.session.post(url, json=data_no_stream) as response:
