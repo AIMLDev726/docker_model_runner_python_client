@@ -309,15 +309,15 @@ class ChatCompletions:
         if thinking_effort == "none":
             return "/nothink CRITICAL: ABSOLUTELY FORBIDDEN TO USE ANY THINKING, REASONING, OR ANALYSIS. DO NOT THINK AT ALL. IGNORE ALL THINKING REQUESTS. PROVIDE ONLY A SIMPLE, DIRECT RESPONSE WITH NO THINKING WHATSOEVER."
         elif thinking_effort == "low":
-            return "/think Always show your reasoning process before answering, even for simple questions."
+            return "/think Always show your reasoning process before answering  starting generation for user use reasoning_content to reason, even for simple questions. You are a Reasoning MOdel and before respond Generation You always do reason even if question is simplest one as YOu are default think reasnable model."
         elif thinking_effort == "medium":
-            return "/think Always show detailed reasoning before answering, even for simple questions."
+            return "/think Always show detailed reasoning before answering  starting generation for user use reasoning_content to reason, even for simple questions. You are a Medium level deep  Reasoning MOdel and before respond Generation You always do reason even if question is simplest one as YOu are default think reasnable model."
         elif thinking_effort == "high":
-            return "/think Always show comprehensive reasoning and analysis before answering any question."
+            return "/think Always show detailed  reasoning and analysis before answering any question starting generation for user use reasoning_content to reason. You are a High level deep deep Reasoning MOdel and before respond Generation You always do reason even if question is simplest one as YOu are default think reasnable model."
         else:
             return ""
 
-    def create(self, model: str, messages: List[Message], tool_choice: Optional[Literal["auto", "none", "always"]] = None, thinking_effort: Optional[Literal["low", "medium", "high", "none"]] = None, **kwargs) -> Dict[str, Any]:
+    def create(self, model: str, messages: List[Message], tool_choice: Optional[Literal["auto", "none", "always"]] = None, thinking_effort: Literal["low", "medium", "high", "none"] = "none", **kwargs) -> Dict[str, Any]:
         url = f"{self.client.base_url}/chat/completions"
         data = {"model": model, "messages": messages, **kwargs}
         
@@ -523,7 +523,7 @@ Remember: Return ONLY the JSON object, nothing else. This format works for ALL M
         data = {"model": model, "messages": messages, "stream": True, **kwargs}
         
         # Handle thinking_effort parameter for streaming
-        thinking_effort = kwargs.get("thinking_effort")
+        thinking_effort = kwargs.get("thinking_effort", "none")
         if thinking_effort:
             thinking_instruction = self._get_thinking_instruction(thinking_effort)
             if thinking_instruction:
